@@ -1,0 +1,15 @@
+{
+  "name": "deep-enterprises-website",
+  "version": "3.0.0",
+  "private": true,
+  "description": "Deep Enterprises fire & safety website (static pages + Vercel serverless enquiry email).",
+  "scripts": {
+    "dev": "node serve.js"
+  },
+  "dependencies": {
+    "nodemailer": "10.0.15"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,8 @@
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 320 90'>
+<g transform='translate(6,8) scale(0.78)'>
+<path d="M50 8 C 58 26 72 32 72 50 C 72 66 62 78 50 78 C 38 78 28 66 28 50 C 28 40 34 34 38 30 C 40 40 46 42 48 36 C 50 28 46 20 50 8 Z" fill="#ff8f00"/>
+<path d="M50 34 C 55 44 60 48 60 56 C 60 65 55 71 50 71 C 45 71 40 65 40 56 C 40 50 43 47 46 44 C 47 50 50 50 51 46 C 52 41 49 39 50 34 Z" fill="#fff3cf"/>
+</g>
+<text x='78' y='42' font-family='Poppins,Arial,sans-serif' font-size='27' font-weight='700' fill='#1a1a2e'>Deep Enterprises</text>
+<text x='79' y='66' font-family='Poppins,Arial,sans-serif' font-size='14.5' letter-spacing='1' fill='#d32f2f'>FIRE SAFETY SOLUTION &amp; STORE</text>
+</svg>
