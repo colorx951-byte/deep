@@ -342,3 +342,51 @@ p{color:var(--muted);margin:.2rem 0 1rem}
 /* Anti-spam honeypot field (hidden from people, visible to bots) */
 .hp-field { position: absolute !important; left: -10000px !important; width: 1px; height: 1px; overflow: hidden; }
 .form-status a { color: inherit; text-decoration: underline; font-weight: 600; }
+
+/* ---------- Product card actions ---------- */
+.card-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:auto;flex-wrap:wrap}
+.card-actions .card-link{margin-top:0}
+.card-pay{font:inherit;font-size:.8rem;font-weight:800;color:var(--red);background:var(--red-soft);border:1px solid #f3c6c7;border-radius:999px;padding:7px 13px;cursor:pointer;transition:background .18s ease,border-color .18s ease}
+.card-pay:hover{background:#ffe4e4;border-color:#e9a3a5}
+.card-pay:focus-visible,.pay-x:focus-visible{outline:3px solid rgba(201,32,38,.35);outline-offset:2px}
+button.btn{cursor:pointer;font-family:inherit}
+
+/* ---------- Advance payment modal ---------- */
+body.pay-open{overflow:hidden}
+.pay-modal{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:16px}
+.pay-modal[hidden]{display:none}
+.pay-backdrop{position:absolute;inset:0;background:rgba(13,20,27,.62);backdrop-filter:blur(3px)}
+.pay-dialog{position:relative;width:min(560px,100%);max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);overflow-y:auto;background:#fff;border-radius:22px;box-shadow:0 30px 80px rgba(0,0,0,.3);padding:28px 26px 24px;outline:none}
+.pay-dialog h2{font-size:1.45rem;margin:6px 0 8px;line-height:1.2}
+.pay-x{position:absolute;top:12px;right:12px;width:38px;height:38px;border-radius:50%;border:0;background:var(--soft);color:var(--ink);font-size:1.5rem;line-height:1;cursor:pointer}
+.pay-x:hover{background:#e9edf2}
+.pay-sub{color:var(--muted);font-size:.9rem;margin:0 0 16px}
+.pay-form{padding:0;box-shadow:none;border:0;background:transparent}
+.pay-product{display:flex;flex-direction:column;gap:2px;padding:12px 14px;margin-bottom:14px;border-radius:12px;background:var(--red-soft);border:1px solid #f6d3d4}
+.pay-product small{font-size:.72rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--red)}
+.pay-product b{font-size:.98rem}
+.pay-submit{width:100%;margin-top:4px}
+.pay-step[data-step="qr"]{text-align:center}
+.pay-amount{font-size:2rem;font-weight:800;color:var(--ink);margin:4px 0 12px}
+.pay-qr{width:min(280px,78vw);aspect-ratio:1;margin:0 auto 12px;padding:12px;border:1px solid var(--line);border-radius:18px;background:#fff;display:grid;place-items:center}
+.pay-qr img{width:100%;height:100%;object-fit:contain}
+.pay-timer{margin:0 0 6px;color:var(--muted);font-size:.88rem}
+.pay-timer b{color:var(--ink);font-variant-numeric:tabular-nums}
+.pay-live{display:inline-flex;align-items:center;gap:8px;margin:4px 0 10px;font-weight:700;font-size:.9rem;color:var(--ink-2)}
+.pay-spinner{width:16px;height:16px;border-radius:50%;border:2px solid #f0c3c4;border-top-color:var(--red);animation:pay-spin .9s linear infinite}
+@keyframes pay-spin{to{transform:rotate(360deg)}}
+.pay-test{margin:0 0 10px;padding:8px 12px;border-radius:10px;background:#fff8e1;color:#8a5a00;font-size:.82rem;font-weight:700}
+.pay-tips{text-align:left;margin:8px 0 0;padding:14px 14px 14px 32px;border-radius:14px;background:var(--soft);color:var(--muted);font-size:.84rem}
+.pay-tips li+li{margin-top:4px}
+.pay-result{text-align:center}
+.pay-result .detail-actions{justify-content:center}
+.pay-icon{width:64px;height:64px;margin:6px auto 8px;border-radius:50%;display:grid;place-items:center;font-size:2rem;font-weight:800;color:#fff}
+.pay-icon.ok{background:#16a34a}
+.pay-icon.warn{background:#d97706}
+.pay-ref{font-size:.85rem;color:var(--muted);word-break:break-all}
+@media (max-width:560px){
+  .pay-modal{padding:0;align-items:end}
+  .pay-dialog{border-radius:22px 22px 0 0;max-height:94dvh;padding:24px 18px 20px}
+  .pay-amount{font-size:1.7rem}
+}
+@media (prefers-reduced-motion:reduce){.pay-spinner{animation:none}}
