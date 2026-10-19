@@ -35,10 +35,18 @@ async function rzp(method, path, body) {
   }
 }
 
-// Short-lived proof that a QR id was issued by this site. Lets the browser poll status
-// for its own QR without turning /api/pay-status into a lookup tool for any QR id.
+// Proof that a QR id / order id was issued by this site to this browser. Lets the
+// browser check status for its own payment without turning the status endpoint into
+// a lookup tool for any id. The id prefix (qr_ / order_) is part of the HMAC input.
 function qrToken(id) {
   return crypto.createHmac('sha256', `qr-status:${keySecret()}`).update(id).digest('hex').slice(0, 32);
+}
+
+// Razorpay Checkout signature: HMAC-SHA256("order_id|payment_id") with the key secret.
+function validCheckoutSignature(orderId, paymentId, signature) {
+  if (!keySecret() || !/^[a-f0-9]{64}$/.test(String(signature || ''))) return false;
+  const expected = crypto.createHmac('sha256', keySecret()).update(`${orderId}|${paymentId}`).digest('hex');
+  return safeEqual(expected, signature);
 }
 
 function safeEqual(a, b) {
@@ -54,4 +62,4 @@ function validWebhookSignature(rawBody, signature) {
   return safeEqual(expected, signature);
 }
 
-module.exports = { rzp, razorpayConfigured, testMode, qrToken, safeEqual, validWebhookSignature };
+module.exports = { rzp, razorpayConfigured, testMode, keyId, qrToken, safeEqual, validWebhookSignature, validCheckoutSignature };

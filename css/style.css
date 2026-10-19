@@ -390,3 +390,9 @@ body.pay-open{overflow:hidden}
   .pay-amount{font-size:1.7rem}
 }
 @media (prefers-reduced-motion:reduce){.pay-spinner{animation:none}}
+
+/* ---------- Phone payment (UPI apps) additions ---------- */
+.pay-alt{display:block;width:100%;margin:10px 0 0;padding:10px;background:none;border:0;color:var(--red);font:inherit;font-size:.86rem;font-weight:700;text-decoration:underline;cursor:pointer}
+.pay-alt[hidden]{display:none}
+.pay-spinner-lg{display:block;width:44px;height:44px;margin:10px auto 14px;border-width:4px}
+.pay-hint{font-weight:600;color:var(--muted);font-size:.76rem;margin-left:4px}

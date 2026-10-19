@@ -30,6 +30,8 @@ window.SITE = {
       {label:"Get a Quote", href:"contact.html#enquiry", outline:true}
     ]
   },
+  // Shown in the payment form. Keep in sync with PAY_MIN_INR on the server (server is authoritative).
+  payments: { minInr: 200 },
   stats: [
     {value:"10+", label:"Product categories"},
     {value:"Pan-India", label:"Supply reach"},

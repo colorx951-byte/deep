@@ -63,14 +63,23 @@ Every product card, category page and product page has a **Pay Advance** button.
   - `POST /api/razorpay-webhook` is called by Razorpay directly. Its signature is checked before anything is trusted. It then emails the sales inbox and the customer (if they gave an email).
 - The customer details are stored as `notes` on each QR, so every payment in the Razorpay dashboard shows the customer name, mobile, product and reference.
 
+**Phones: UPI app list (Razorpay Checkout)**
+On phones, Pay Advance opens Razorpay Checkout on the UPI app list instead of a QR. The mobile number is filled in and locked. Customers can still choose "Show a QR code instead".
+- `POST /api/pay-order` runs the same checks as the QR flow (shared `api/_lib/validate.js`). It creates a Razorpay Order on the server and returns only the order id, the amount and the **public** Key ID.
+- `POST /api/pay-verify` checks the Checkout signature (HMAC of `order_id|payment_id` with the Key Secret). It then fetches the payment from Razorpay and confirms it belongs to the order, matches the amount exactly, and is captured.
+- `GET /api/pay-status` also accepts order ids (same signed-token protection), so the page can resume confirming if the phone browser reloads while the customer is in the UPI app.
+- The webhook handles `order.paid` for these payments (only orders created by this website).
+- `vercel.json` CSP allows Razorpay's domains only (`checkout.razorpay.com`, `*.razorpay.com`) for scripts, frames and connections. `serve.js` applies the same headers locally.
+
 **Setup**
 1. In the Razorpay dashboard, make sure **QR Codes** are enabled for your account. If they aren't, ask Razorpay support to enable them.
 2. Go to Account & Settings → API Keys and generate **test** keys. Add `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET` to `.env`, and later to Vercel.
 3. Pick any long random string for `RAZORPAY_WEBHOOK_SECRET` and add it to `.env`/Vercel.
 4. After deploying, go to Razorpay → Webhooks → Add New Webhook:
-   - URL: `https://deepenterprises.world/api/razorpay-webhook`
+   - URL: `https://www.deepenterprises.world/api/razorpay-webhook` (with `www`; Razorpay doesn't follow redirects)
    - Secret: the same `RAZORPAY_WEBHOOK_SECRET`
-   - Active event: **`qr_code.credited`**
+   - Active events: **`qr_code.credited`** and **`order.paid`**
+   - Also set Payment Capture to **automatic** (Account & Settings → Capture settings).
 5. Open `/api/health`. It should show `"payments": "test"` (or `"live"`) and `"webhook": true`.
 6. When testing is done, swap in the `rzp_live_...` keys on Vercel, update the webhook in live mode, and redeploy.
 

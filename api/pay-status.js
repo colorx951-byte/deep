@@ -37,7 +37,7 @@ module.exports = async function handler(req, res) {
   const q = new URL(req.url, 'http://local').searchParams;
   const id = q.get('id') || '';
   const token = q.get('t') || '';
-  if (!/^qr_[A-Za-z0-9]{6,30}$/.test(id) || !/^[a-f0-9]{32}$/.test(token)) return send(res, 400, { error: 'Invalid request' });
+  if (!/^(qr|order)_[A-Za-z0-9]{6,30}$/.test(id) || !/^[a-f0-9]{32}$/.test(token)) return send(res, 400, { error: 'Invalid request' });
   if (!razorpayConfigured()) return send(res, 503, { error: 'Not configured' });
   if (!safeEqual(qrToken(id), token)) return send(res, 403, { error: 'Forbidden' });
 
@@ -47,6 +47,14 @@ module.exports = async function handler(req, res) {
   if (qrLimited(id)) { res.setHeader('Retry-After', '15'); return send(res, 429, { error: 'Too many requests' }); }
 
   try {
+    if (id.startsWith('order_')) {
+      // Checkout orders: "paid" only when Razorpay marks the order paid.
+      const order = await rzp('GET', `/orders/${id}`);
+      const full = Number(order.amount) > 0 && Number(order.amount_paid) >= Number(order.amount);
+      const status = order.status === 'paid' || full ? 'paid' : 'pending';
+      remember(id, status);
+      return send(res, 200, { status });
+    }
     const qr = await rzp('GET', `/payments/qr_codes/${id}`);
     const received = Number(qr.payments_amount_received || 0);
     const expected = Number(qr.payment_amount || 0);

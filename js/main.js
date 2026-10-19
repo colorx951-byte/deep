@@ -127,12 +127,36 @@
     draw(data.enquiries||[]);
   }
 
-  /* ---------- Advance payment via single-use Razorpay UPI QR ----------
-     The browser only talks to our own /api endpoints. The server creates the QR
-     with the secret key and confirms payment with Razorpay. */
+  /* ---------- Advance payment ----------
+     Phones: Razorpay Checkout opens on the UPI app list (GPay, PhonePe, Paytm, BHIM…).
+     Computers: a single-use, fixed-amount, expiring UPI QR.
+     The server sets the amount and verifies every payment with Razorpay; the browser
+     only ever gets order/QR ids and the PUBLIC key id. */
   function payments(){
     const inr = (paise) => '₹' + (paise / 100).toLocaleString('en-IN', { minimumFractionDigits: paise % 100 ? 2 : 0, maximumFractionDigits: 2 });
-    let modal, dialog, lastTrigger, pollTimer, tickTimer, current = null;
+    const PENDING_KEY = 'de_pending_payment';
+    // Convenience check only; the server enforces the real minimum (PAY_MIN_INR).
+    const PAY_MIN = Number(S.payments?.minInr || 200);
+    // Phone = mobile user agent, or a touch-first small screen.
+    const isPhone = () => /Android|iPhone|iPod|Mobile|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+      (matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 820);
+    let modal, dialog, lastTrigger, pollTimer, tickTimer, current = null, forceQr = false, checkoutScript = null;
+
+    function loadCheckout(){
+      if (window.Razorpay) return Promise.resolve();
+      if (checkoutScript) return checkoutScript;
+      checkoutScript = new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'https://checkout.razorpay.com/v1/checkout.js';
+        s.async = true;
+        s.onload = () => window.Razorpay ? resolve() : reject(new Error('Checkout unavailable'));
+        s.onerror = () => { checkoutScript = null; s.remove(); reject(new Error('Checkout unavailable')); };
+        document.head.appendChild(s);
+      });
+      return checkoutScript;
+    }
+    const savePending = (p) => { try { sessionStorage.setItem(PENDING_KEY, JSON.stringify({ ...p, at: Date.now() })); } catch {} };
+    const clearPending = () => { try { sessionStorage.removeItem(PENDING_KEY); } catch {} };
 
     function build(){
       modal = document.createElement('div');
@@ -145,7 +169,7 @@
           <div class="pay-step" data-step="form">
             <span class="eyebrow dark">ADVANCE PAYMENT</span>
             <h2 id="pay-title">Pay Advance via UPI</h2>
-            <p class="pay-sub">Pay the advance amount agreed with our team. A one-time UPI QR code will be created for this payment only.</p>
+            <p class="pay-sub" id="pay-form-sub"></p>
             <form id="pay-form" class="enquiry-form pay-form" novalidate>
               <div class="pay-product"><small>Product</small><b id="pay-product-label"></b></div>
               <input type="hidden" name="product">
@@ -158,9 +182,10 @@
                 <label>Email (for receipt)<input name="email" type="email" maxlength="120" autocomplete="email"></label>
                 <label>Enquiry / Quote Reference<input name="reference" maxlength="40" placeholder="Optional"></label>
               </div>
-              <label>Advance Amount (₹)*<input name="amount" required inputmode="decimal" maxlength="11" placeholder="e.g. 2500" autocomplete="off"></label>
+              <label>Advance Amount (₹)* <small class="pay-hint">Minimum ₹${PAY_MIN.toLocaleString('en-IN')}</small><input name="amount" required inputmode="decimal" maxlength="11" placeholder="e.g. 2500" autocomplete="off"></label>
               <p class="form-status" id="pay-form-status" role="status" aria-live="polite"></p>
               <button class="btn btn-primary pay-submit" type="submit">Generate UPI QR →</button>
+              <button class="pay-alt" type="button" id="pay-alt" hidden>Show a QR code instead</button>
               <small class="form-disclaimer">Payments are processed securely by Razorpay. Deep Enterprises never sees your UPI PIN or bank details.</small>
             </form>
           </div>
@@ -180,6 +205,12 @@
             </ul>
           </div>
 
+          <div class="pay-step pay-result" data-step="verify" hidden>
+            <span class="pay-spinner pay-spinner-lg" aria-hidden="true"></span>
+            <h2>Confirming Your Payment</h2>
+            <p id="pay-verify-text" role="status" aria-live="polite">Checking with Razorpay. Please don't pay again or close this page.</p>
+          </div>
+
           <div class="pay-step pay-result" data-step="done" hidden>
             <div class="pay-icon ok" aria-hidden="true">✓</div>
             <h2>Payment Received</h2>
@@ -191,17 +222,18 @@
 
           <div class="pay-step pay-result" data-step="expired" hidden>
             <div class="pay-icon warn" aria-hidden="true">!</div>
-            <h2>QR Code Expired</h2>
-            <p>No payment was received before the QR code expired. If you already paid, don't pay again. Please call us at <a href="tel:${esc(phoneHref(S.company?.phone||''))}">${esc(S.company?.phone||'')}</a>.</p>
-            <div class="detail-actions"><button type="button" class="btn btn-primary" id="pay-retry">Generate a New QR</button><button type="button" class="btn btn-outline-red" data-pay-close>Close</button></div>
+            <h2 id="pay-expired-title">QR Code Expired</h2>
+            <p><span id="pay-expired-text">No payment was received before the QR code expired.</span> If you already paid, don't pay again. Please call us at <a href="tel:${esc(phoneHref(S.company?.phone||''))}">${esc(S.company?.phone||'')}</a>.</p>
+            <div class="detail-actions"><button type="button" class="btn btn-primary" id="pay-retry">Try Again</button><button type="button" class="btn btn-outline-red" data-pay-close>Close</button></div>
           </div>
         </div>`;
       document.body.appendChild(modal);
       dialog = qs('.pay-dialog', modal);
 
       qsa('[data-pay-close]', modal).forEach(b => b.addEventListener('click', close));
-      qs('#pay-retry', modal).addEventListener('click', () => step('form'));
+      qs('#pay-retry', modal).addEventListener('click', () => { setMode(); step('form'); });
       qs('#pay-form', modal).addEventListener('submit', submit);
+      qs('#pay-alt', modal).addEventListener('click', () => { forceQr = !forceQr; setMode(); });
       modal.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') { e.preventDefault(); close(); return; }
         if (e.key !== 'Tab') return;
@@ -222,10 +254,22 @@
 
     function stopTimers(){ clearTimeout(pollTimer); clearInterval(tickTimer); pollTimer = tickTimer = null; }
 
+    const useApps = () => isPhone() && !forceQr;
+    function setMode(){
+      const apps = useApps();
+      qs('#pay-form-sub', modal).textContent = apps
+        ? 'Pay the advance amount agreed with our team. Choose your UPI app (GPay, PhonePe, Paytm, BHIM…) on the next screen.'
+        : 'Pay the advance amount agreed with our team. A one-time UPI QR code will be created for this payment only.';
+      qs('.pay-submit', modal).textContent = apps ? 'Pay with UPI App →' : 'Generate UPI QR →';
+      const alt = qs('#pay-alt', modal);
+      alt.hidden = !isPhone();
+      alt.textContent = forceQr ? 'Pay with a UPI app instead' : 'Show a QR code instead';
+    }
+
     function open(product, trigger){
       if (!modal) build();
       lastTrigger = trigger;
-      stopTimers(); current = null;
+      stopTimers(); current = null; forceQr = false; setMode();
       const form = qs('#pay-form', modal);
       form.elements.product.value = product;
       qs('#pay-product-label', modal).textContent = product;
@@ -251,6 +295,9 @@
       if (!/^(\+?91|0)?[6-9]\d{9}$/.test(String(data.phone || '').replace(/[\s-]/g, ''))) return fail('Please enter a valid 10-digit mobile number.', 'phone');
       if (data.email && !form.elements.email.checkValidity()) return fail('Please enter a valid email address.', 'email');
       if (!/^\d{1,7}(\.\d{1,2})?$/.test(amt) || Number(amt) <= 0) return fail('Please enter a valid amount, e.g. 2500 or 2500.50.', 'amount');
+      if (Number(amt) < PAY_MIN) return fail(`Minimum advance amount is ₹${PAY_MIN.toLocaleString('en-IN')}.`, 'amount');
+
+      if (useApps()) return startCheckout(form, { ...data, amount: amt }, status, btn, fail);
 
       status.className = 'form-status'; status.textContent = 'Creating a secure UPI QR…';
       btn.disabled = true;
@@ -263,6 +310,137 @@
       } catch (err) {
         fail(err.name === 'AbortError' ? 'The request timed out. Please try again.' : err.message);
       } finally { btn.disabled = false; }
+    }
+
+    // Phone flow: server creates the order -> Razorpay Checkout (UPI apps only) -> server verifies.
+    async function startCheckout(form, data, status, btn, fail){
+      status.className = 'form-status'; status.textContent = 'Starting secure payment…';
+      btn.disabled = true;
+      let o;
+      try {
+        const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 30000);
+        const [res] = await Promise.all([
+          fetch('/api/pay-order', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(data), signal: ctrl.signal }).finally(() => clearTimeout(t)),
+          loadCheckout(),
+        ]);
+        o = await res.json().catch(() => ({}));
+        if (!res.ok || !o.orderId) throw new Error(o.error || 'Could not start the payment. Please try again or call us.');
+      } catch (err) {
+        btn.disabled = false;
+        if (err.message === 'Checkout unavailable') { forceQr = true; setMode(); return fail('The UPI app screen could not load. Please use the QR code option instead.'); }
+        return fail(err.name === 'AbortError' ? 'The request timed out. Please try again.' : err.message);
+      }
+
+      const q = { id: o.orderId, token: o.token, amount: o.amount, kind: 'order' };
+      current = q;
+      savePending(q);
+      let settled = false;
+      const prefill = { name: o.prefill.name, contact: o.prefill.contact };
+      if (o.prefill.email) prefill.email = o.prefill.email;
+
+      const rzp = new window.Razorpay({
+        key: o.key,
+        order_id: o.orderId,
+        amount: o.amount,
+        currency: 'INR',
+        name: S.company?.name || 'Deep Enterprises',
+        description: o.description,
+        prefill,
+        readonly: { contact: true, email: Boolean(o.prefill.email), name: true },
+        theme: { color: '#c92026' },
+        retry: { enabled: true, max_count: 3 },
+        config: {
+          display: {
+            // One instrument per app, so each app is shown directly on the first screen
+            // (no extra "UPI" tap). A separate "UPI All" block covers any other UPI app.
+            blocks: {
+              upi: {
+                name: 'Pay using UPI',
+                instruments: ['google_pay', 'phonepe', 'paytm', 'bhim'].map((app) => ({ method: 'upi', flows: ['intent'], apps: [app] })),
+              },
+              upi_all: {
+                name: 'UPI All',
+                instruments: [{ method: 'upi', flows: ['intent'] }],
+              },
+            },
+            sequence: ['block.upi', 'block.upi_all'],
+            preferences: { show_default_blocks: false },
+          },
+        },
+        handler: (resp) => { settled = true; showModal(); verify(q, resp); },
+        modal: {
+          ondismiss: () => {
+            if (settled) return;
+            showModal();
+            // The customer may have paid in the UPI app and then closed the sheet: check first.
+            step('verify');
+            qs('#pay-verify-text', modal).textContent = 'Checking whether the payment went through…';
+            (async () => {
+              let st = 'unknown';
+              for (let i = 0; i < 3 && st !== 'paid'; i++) {
+                if (i) await new Promise((r) => setTimeout(r, 4000));
+                st = await checkOnce(q);
+              }
+              return st;
+            })().then((st) => {
+              if (current !== q) return;
+              if (st === 'paid') return paid(q);
+              clearPending(); current = null;
+              step('form');
+              status.className = 'form-status error';
+              status.textContent = 'Payment was not completed. You can try again, or use the QR code option. If money was debited, don\u2019t pay again; call us and we\u2019ll confirm it.';
+            });
+          },
+        },
+      });
+      rzp.on('payment.failed', (resp) => {
+        console.warn('Payment failed', resp?.error?.code, resp?.error?.reason);
+      });
+      btn.disabled = false;
+      status.textContent = '';
+      hideModal();
+      rzp.open();
+    }
+
+    async function verify(q, resp){
+      step('verify');
+      qs('#pay-verify-text', modal).textContent = 'Checking with Razorpay. Please don\u2019t pay again or close this page.';
+      for (let attempt = 0; attempt < 4; attempt++) {
+        try {
+          const res = await fetch('/api/pay-verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin',
+            body: JSON.stringify({ razorpay_order_id: resp.razorpay_order_id, razorpay_payment_id: resp.razorpay_payment_id, razorpay_signature: resp.razorpay_signature, t: q.token }) });
+          const out = await res.json().catch(() => ({}));
+          if (current !== q) return;
+          if (out.status === 'paid') return paid(q, resp.razorpay_payment_id);
+          if (res.status === 400 || res.status === 403 || out.status === 'failed') break;
+        } catch { /* network: retry */ }
+        await new Promise((r) => setTimeout(r, 2500));
+      }
+      // Not confirmed yet (e.g. capture still processing): keep checking quietly.
+      qs('#pay-verify-text', modal).textContent = 'Still confirming with Razorpay… This can take a minute. Please don\u2019t pay again.';
+      q.closeBy = Math.floor(Date.now() / 1000) + 10 * 60;
+      poll(q, 0);
+    }
+
+    async function checkOnce(q){
+      try {
+        const res = await fetch(`/api/pay-status?id=${encodeURIComponent(q.id)}&t=${encodeURIComponent(q.token)}`, { credentials: 'same-origin', cache: 'no-store' });
+        return (await res.json().catch(() => ({}))).status || 'unknown';
+      } catch { return 'unknown'; }
+    }
+
+    // Our dialog steps aside while Razorpay's sheet is open.
+    function hideModal(){ modal.hidden = true; }
+    function showModal(){ modal.hidden = false; document.body.classList.add('pay-open'); }
+
+    function showExpired(q){
+      stopTimers(); clearPending();
+      const order = q.kind === 'order';
+      qs('#pay-expired-title', modal).textContent = order ? 'Payment Not Confirmed Yet' : 'QR Code Expired';
+      qs('#pay-expired-text', modal).textContent = order
+        ? 'We could not confirm this payment yet. If money was debited, it will be confirmed automatically or refunded by your bank.'
+        : 'No payment was received before the QR code expired.';
+      step('expired');
     }
 
     function showQr(q){
@@ -289,7 +467,7 @@
         const out = await res.json().catch(() => ({}));
         if (current !== q) return;
         if (out.status === 'paid') return paid(q);
-        if (out.status === 'expired' || out.status === 'closed') { stopTimers(); return step('expired'); }
+        if (out.status === 'expired' || out.status === 'closed') return showExpired(q);
         if (res.status === 429) {
           // Server asked us to slow down: wait, keep the normal waiting message.
           next = Math.min(30, Math.max(5, Number(res.headers.get('Retry-After')) || 15)) * 1000;
@@ -299,16 +477,36 @@
         misses = res.ok ? 0 : misses + 1;
       } catch { misses += 1; }
       // Past expiry: one final check, then show expired.
-      if (Math.floor(Date.now() / 1000) > q.closeBy + 20) { stopTimers(); return step('expired'); }
-      if (misses > 2) { qs('#pay-live', modal).textContent = 'Checking payment status… (connection issue, retrying)'; next = 8000; }
+      if (Math.floor(Date.now() / 1000) > q.closeBy + 20) return showExpired(q);
+      if (misses > 2) {
+        qs(q.kind === 'order' ? '#pay-verify-text' : '#pay-live', modal).textContent = 'Checking payment status… (connection issue, retrying)';
+        next = 8000;
+      }
       pollTimer = setTimeout(() => poll(q, misses), next);
     }
 
-    function paid(q){
-      stopTimers();
+    function paid(q, paymentId){
+      stopTimers(); clearPending();
+      showModal();
       qs('#pay-done-text', modal).textContent = `We have received your advance payment of ${inr(q.amount)}.`;
-      qs('#pay-done-ref', modal).textContent = q.id;
+      qs('#pay-done-ref', modal).textContent = paymentId || q.id;
       step('done');
+    }
+
+    // Phone browsers sometimes reload the page while the customer is in the UPI app.
+    // If a payment was in progress in this tab, resume confirming it.
+    function resumePending(){
+      let p = null;
+      try { p = JSON.parse(sessionStorage.getItem(PENDING_KEY) || 'null'); } catch {}
+      if (!p || !p.id || !p.token || Date.now() - p.at > 30 * 60 * 1000) return clearPending();
+      if (!modal) build();
+      setMode();
+      const q = { id: p.id, token: p.token, amount: p.amount, kind: p.kind || 'order', closeBy: Math.floor(Date.now() / 1000) + 90 };
+      current = q;
+      showModal();
+      step('verify');
+      qs('#pay-verify-text', modal).textContent = 'Checking your recent payment with Razorpay… Please don\u2019t pay again.';
+      poll(q, 0);
     }
 
     document.addEventListener('click', (e) => {
@@ -317,6 +515,7 @@
       e.preventDefault();
       open(b.dataset.payProduct, b);
     });
+    resumePending();
   }
 
   header();footer();payments();
